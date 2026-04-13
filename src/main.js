@@ -1,21 +1,52 @@
 /**
  * Electron main process for Pomo app.
- * Manages: main window, blocking overlay window, IPC handlers, timer coordination.
+ * Manages: main window, blocking overlay window, system tray, notifications,
+ * IPC handlers, and timer coordination.
  */
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, Notification } = require('electron');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { initDB, saveSession, getTodaySessions, getYesterdaySessions, getTodayPomodoroCount } = require('./db');
 
-let mainWindow = null;
+let mainWindow    = null;
 let blockingWindow = null;
+let tray          = null;
 let currentSession = null; // { startTime, pomodoroNumber }
+let trayLabel     = 'Pomo'; // updated by renderer ticks
+
+// ── Tray icon (16×16 template image drawn via canvas-like Buffer) ─────────────
+/**
+ * Build a minimal 16×16 PNG Buffer for the tray icon using raw pixel data.
+ * White circle on transparent background — renders as macOS template image.
+ * @returns {Electron.NativeImage}
+ */
+function makeTrayIcon() {
+  // 16×16 RGBA — draw a small tomato/circle shape
+  // We use a pre-encoded 1×1 white pixel then resize, which gives a dot.
+  // For a proper icon we embed a small base64 PNG directly.
+  const iconBase64 =
+    'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwY' +
+    'AAAAB3RJTUUH6AQNDSsV5OqLkQAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJ' +
+    'TVBkLmUHAAAAiElEQVQ4y2NgGAWDHvz//5+BkgATA1UAixMDA8N/BgYGBkrNYGBg+M/AwMBA' +
+    'SZ8JDAwM/xkYGBgo6TMDQ////xkYGCjpMwMDA8N/BgYGBkr6zMDAwPCfgYGBgZI+MzAwMPxn' +
+    'YGBgoKTPDAwMDP8ZGBgYKOkzAwMDw38GBgYGSvrMwMDA8B8AKxAI8fEiIvAAAAAASUVORK5C' +
+    'YII=';
+  return nativeImage.createFromDataURL(`data:image/png;base64,${iconBase64}`);
+}
+
+// ── Windows ───────────────────────────────────────────────────────────────────
 
 /**
- * Create the main application window.
+ * Create (or show) the main application window.
  */
 function createMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 720,
@@ -32,6 +63,16 @@ function createMainWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // Hide instead of close so the tray keeps the app alive
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+      updateTrayMenu();
+    }
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -40,7 +81,23 @@ function createMainWindow() {
  * Stays above all other windows until the user submits accomplishment details.
  */
 function createBlockingWindow() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  // First: fire a macOS notification so the user knows time is up
+  if (Notification.isSupported()) {
+    const n = new Notification({
+      title: '🎯 Focus session complete!',
+      body: 'Log what you accomplished to continue.',
+      silent: false,
+    });
+    n.show();
+  }
+
+  // Restore and bring main window to front before opening blocker
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.restore();
+    mainWindow.show();
+  }
+
+  const { width, height } = screen.getPrimaryDisplay().bounds;
 
   blockingWindow = new BrowserWindow({
     width,
@@ -65,6 +122,7 @@ function createBlockingWindow() {
   blockingWindow.setAlwaysOnTop(true, 'screen-saver');
   blockingWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   blockingWindow.focus();
+  updateTrayMenu();
 }
 
 /**
@@ -75,9 +133,75 @@ function closeBlockingWindow() {
     blockingWindow.close();
     blockingWindow = null;
   }
+  updateTrayMenu();
 }
 
-// ─── IPC Handlers ────────────────────────────────────────────────────────────
+// ── Tray ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Create the system tray icon and initial context menu.
+ */
+function createTray() {
+  const icon = makeTrayIcon();
+  tray = new Tray(icon);
+  tray.setToolTip('Pomo');
+
+  // Single click → show/hide main window
+  tray.on('click', () => {
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      createMainWindow();
+    }
+    updateTrayMenu();
+  });
+
+  updateTrayMenu();
+}
+
+/**
+ * Rebuild the tray context menu with current state.
+ * Called whenever phase/label changes or window visibility changes.
+ */
+function updateTrayMenu() {
+  if (!tray) return;
+
+  const isVisible  = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible();
+  const isBlocking = blockingWindow && !blockingWindow.isDestroyed();
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: trayLabel,
+      enabled: false,
+    },
+    { type: 'separator' },
+    {
+      label: isVisible ? 'Hide Window' : 'Show Window',
+      click: () => {
+        if (isVisible) { mainWindow.hide(); }
+        else { createMainWindow(); }
+        updateTrayMenu();
+      },
+    },
+    ...(isBlocking ? [{
+      label: '⚠ Waiting for accomplishment log…',
+      enabled: false,
+    }] : []),
+    { type: 'separator' },
+    {
+      label: 'Quit Pomo',
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+
+  tray.setContextMenu(menu);
+  tray.setToolTip(trayLabel);
+}
+
+// ── IPC Handlers ──────────────────────────────────────────────────────────────
 
 /** Renderer requests to start a new pomodoro session. */
 ipcMain.on('session-start', (event, data) => {
@@ -94,6 +218,16 @@ ipcMain.on('pomodoro-ended', () => {
   createBlockingWindow();
 });
 
+/**
+ * Renderer sends a tick string so the tray label stays in sync.
+ * @example ipcRenderer.send('tray-tick', '🍅 34:12 Focus')
+ */
+ipcMain.on('tray-tick', (event, label) => {
+  trayLabel = label;
+  updateTrayMenu();
+  if (tray) tray.setToolTip(label);
+});
+
 /** Blocker window loaded — send session context so it can number the pomodoro. */
 ipcMain.handle('get-current-session', () => currentSession);
 
@@ -105,15 +239,15 @@ ipcMain.handle('submit-accomplishment', async (event, form) => {
   if (!currentSession) return { ok: false, error: 'No active session' };
 
   const session = {
-    id: currentSession.id,
-    date: currentSession.date,
-    start_time: currentSession.startTime,
-    end_time: form.endTime,
+    id:              currentSession.id,
+    date:            currentSession.date,
+    start_time:      currentSession.startTime,
+    end_time:        form.endTime,
     pomodoro_number: currentSession.pomodoroNumber,
-    type: form.type,
-    description: form.description,
-    source: form.source,
-    topic: form.topic || null,
+    type:            form.type,
+    description:     form.description,
+    source:          form.source,
+    topic:           form.topic || null,
   };
 
   try {
@@ -121,8 +255,10 @@ ipcMain.handle('submit-accomplishment', async (event, form) => {
     currentSession = null;
     closeBlockingWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('sessions-updated');
+      mainWindow.restore();
+      mainWindow.show();
       mainWindow.focus();
+      mainWindow.webContents.send('sessions-updated');
     }
     return { ok: true };
   } catch (err) {
@@ -131,25 +267,29 @@ ipcMain.handle('submit-accomplishment', async (event, form) => {
 });
 
 /** Load today's sessions for the main window. */
-ipcMain.handle('get-today-sessions', () => getTodaySessions());
+ipcMain.handle('get-today-sessions',   () => getTodaySessions());
 
 /** Load yesterday's sessions for the summary modal. */
 ipcMain.handle('get-yesterday-sessions', () => getYesterdaySessions());
 
 /** Get today's completed pomodoro count (for numbering). */
-ipcMain.handle('get-today-count', () => getTodayPomodoroCount());
+ipcMain.handle('get-today-count',      () => getTodayPomodoroCount());
 
-// ─── App lifecycle ────────────────────────────────────────────────────────────
+// ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
   initDB();
   createMainWindow();
+  createTray();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-  });
+  // macOS dock click → show main window
+  app.on('activate', () => createMainWindow());
 });
 
+// Never quit when all windows close — tray keeps the app alive
 app.on('window-all-closed', () => {
+  // do nothing on macOS; tray icon keeps app running
   if (process.platform !== 'darwin') app.quit();
 });
+
+app.on('before-quit', () => { app.isQuitting = true; });

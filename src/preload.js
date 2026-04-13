@@ -6,19 +6,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pomo', {
-  // ── Timer / session ──────────────────────────────────────────────────────
-  sessionStart: (data) => ipcRenderer.send('session-start', data),
-  pomodoroEnded: () => ipcRenderer.send('pomodoro-ended'),
+  // -- Timer / session
+  sessionStart:  (data) => ipcRenderer.send('session-start', data),
+  pomodoroEnded: ()     => ipcRenderer.send('pomodoro-ended'),
 
-  // ── Blocker window ───────────────────────────────────────────────────────
-  getCurrentSession: () => ipcRenderer.invoke('get-current-session'),
+  // -- Blocker window
+  getCurrentSession:    ()     => ipcRenderer.invoke('get-current-session'),
   submitAccomplishment: (form) => ipcRenderer.invoke('submit-accomplishment', form),
 
-  // ── Data queries ─────────────────────────────────────────────────────────
-  getTodaySessions: () => ipcRenderer.invoke('get-today-sessions'),
+  // -- Data queries
+  getTodaySessions:     () => ipcRenderer.invoke('get-today-sessions'),
   getYesterdaySessions: () => ipcRenderer.invoke('get-yesterday-sessions'),
-  getTodayCount: () => ipcRenderer.invoke('get-today-count'),
+  getTodayCount:        () => ipcRenderer.invoke('get-today-count'),
 
-  // ── Events ───────────────────────────────────────────────────────────────
+  // -- Tray sync (send current timer label to main process)
+  trayTick: (label) => ipcRenderer.send('tray-tick', label),
+
+  // -- Events
   onSessionsUpdated: (cb) => ipcRenderer.on('sessions-updated', cb),
 });

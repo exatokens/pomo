@@ -114,6 +114,10 @@ function tick() {
   timerDisplay.textContent = fmt(secondsLeft);
   updateRing(secondsLeft, currentPhase.seconds);
 
+  // Keep tray label in sync every second
+  const phaseEmoji = currentPhase === PHASES.FOCUS ? '🍅' : '☕';
+  window.pomo.trayTick(`${phaseEmoji} ${fmt(secondsLeft)}  ${currentPhase.label}`);
+
   if (secondsLeft <= 0) {
     clearInterval(timerInterval);
     timerInterval = null;

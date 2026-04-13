@@ -22,11 +22,9 @@ let trayLabel     = 'Pomo'; // updated by renderer ticks
  * @returns {Electron.NativeImage}
  */
 function makeTrayIcon() {
-  const iconPath = path.join(__dirname, '..', 'assets', 'tray.png');
-  const img = nativeImage.createFromPath(iconPath);
-  // Mark as template so macOS inverts it for dark/light menu bar automatically
-  img.setTemplateImage(true);
-  return img;
+  // We display via tray.setTitle() emoji, so use an empty image to avoid
+  // a duplicate icon dot appearing next to the text.
+  return nativeImage.createEmpty();
 }
 
 // ── Windows ───────────────────────────────────────────────────────────────────

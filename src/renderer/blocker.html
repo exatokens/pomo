@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pomo – Log Accomplishment</title>
+  <link rel="stylesheet" href="blocker.css" />
+</head>
+<body>
+  <div class="blocker">
+    <!-- Left: celebration + session info -->
+    <div class="blocker-left">
+      <div class="big-icon">🎯</div>
+      <h1>Focus session complete!</h1>
+      <div class="session-badge" id="session-badge">Pomodoro #1</div>
+      <p class="sub">Log what you accomplished to continue.<br/>This is your only way forward.</p>
+
+      <div class="rules">
+        <div class="rule"><span class="rule-icon">📱</span> App → Mac path or GitHub URL</div>
+        <div class="rule"><span class="rule-icon">📖</span> Reading → link + topic</div>
+        <div class="rule"><span class="rule-icon">🌐</span> Browsing → topic + issue context</div>
+      </div>
+    </div>
+
+    <!-- Right: form -->
+    <div class="blocker-right">
+      <div class="form-card">
+        <h2>What did you accomplish?</h2>
+
+        <!-- Type selector -->
+        <div class="type-selector">
+          <button class="type-btn" data-type="app">
+            <span>📱</span> App
+          </button>
+          <button class="type-btn" data-type="reading">
+            <span>📖</span> Reading
+          </button>
+          <button class="type-btn" data-type="browsing">
+            <span>🌐</span> Browsing
+          </button>
+        </div>
+
+        <!-- Description -->
+        <div class="field">
+          <label>What you did <span class="req">*</span></label>
+          <textarea id="f-description" rows="3"
+            placeholder="e.g. Built the authentication flow for the login screen"></textarea>
+        </div>
+
+        <!-- Source (label changes per type) -->
+        <div class="field" id="field-source">
+          <label id="source-label">Source / Location <span class="req">*</span></label>
+          <input type="text" id="f-source"
+            placeholder="App path, GitHub URL, or link" />
+        </div>
+
+        <!-- Topic (shown for reading/browsing) -->
+        <div class="field hidden" id="field-topic">
+          <label id="topic-label">Topic / Issue <span class="req">*</span></label>
+          <input type="text" id="f-topic"
+            placeholder="Topic you were reading about or issue being browsed" />
+        </div>
+
+        <div class="error-msg hidden" id="error-msg">Please fill in all required fields.</div>
+
+        <button class="btn-submit" id="btn-submit">
+          Log & Continue →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="blocker.js"></script>
+</body>
+</html>

@@ -8,7 +8,6 @@
     "dev": "electron . --dev"
   },
   "dependencies": {
-    "better-sqlite3": "^8.7.0",
     "uuid": "^9.0.0"
   },
   "devDependencies": {
